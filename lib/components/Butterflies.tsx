@@ -12,10 +12,14 @@ type Props = {
   butterflyOpacity?: number; // 0..1, butterflies only
   intro?: number;            // seconds to ramp up from nothing (0 = start full)
   density?: number;
+
+  rush?: number;
+  rushHold?: number;
+  rushFade?: number; 
 };
 
 export default function Butterflies({
-  theme = "light",
+  theme = "dark",
   hue = 0,
   renderer = "three",
   opacity = 1,
@@ -23,7 +27,10 @@ export default function Butterflies({
   white = 0,
   butterflyOpacity = 1,
   intro = 5,
-  density = 0.4,
+  density = 4,
+  rush = 6,
+  rushHold = 3.5,
+  rushFade = 5, 
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<any>(null);
@@ -56,9 +63,12 @@ export default function Butterflies({
           opacity: butterflyOpacity,
           intro: reduced ? 0 : intro,
           density,
-          grid: .5,
+          grid: .1,
           trailFade: .6,
           trail: .4,
+          rush,
+          rushHold,
+          rushFade, 
         },
       });
       engineRef.current = engine;
@@ -103,7 +113,7 @@ export default function Butterflies({
       aria-hidden="true"
       className={className}
       style={{
-        position: "absolute",
+        position: "fixed",
         inset: 0,
         width: "100%",
         height: "100%",

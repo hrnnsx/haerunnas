@@ -23,10 +23,10 @@ const LABEL = "font-mono text-xs uppercase tracking-widest text-white/50";
 export default function Home() {
   return (
     <main>
-      <Butterflies theme="dark" white={1} butterflyOpacity={1} density={0.2} />
+      <Butterflies theme="dark" white={1} butterflyOpacity={1} density={0.4} />
 
       {/* Hero */}
-      <section className="relative z-10 flex min-h-screen w-full flex-col justify-between px-6 py-8 sm:px-12 sm:py-12">
+      {/* <section className="relative z-10 flex min-h-screen w-full flex-col justify-between px-6 py-8 sm:px-12 sm:py-12">
         <header className={`flex items-center justify-between ${LABEL}`}>
           <span className="select-none">[ Haerunnas ]</span>
           <nav className="flex gap-6">
@@ -50,15 +50,14 @@ export default function Home() {
             <BracketLink key={href} href={href} external>{label}</BracketLink>
           ))}
         </footer>
-      </section>
+      </section> */}
 
-      <Section id="work" label="Work">
+      {/* <Section id="work">
         <div className="grid gap-4 md:grid-cols-2">
           {PROJECTS.map(({ title, desc, href }) => (
             <a
-              key={title}
-              href={href}
-              className="rounded-2xl border border-white/10 bg-white/3 p-6 hover:border-white/30 hover:bg-white/6"
+              key={title} href={href}
+              className="rounded-2xl border bg-[#0a0a0a]"
             >
               <h3 className="font-mono text-lg">{title}</h3>
               <p className="mt-3 text-sm leading-relaxed text-white/60">{desc}</p>
@@ -67,21 +66,21 @@ export default function Home() {
         </div>
       </Section>
 
-      <Section id="about" label="About">
+      <Section id="about">
         <div className="max-w-2xl space-y-4 text-white/70">
           <p>lorem ipsum dolor sit amet.</p>
           <p>idk man, it just a place holder.</p>
         </div>
       </Section>
 
-      <Section id="contact" label="Contact">
+      <Section id="contact">
         <a
           href="mailto:nassjourney@gmail.com"
           className="font-mono text-2xl underline-offset-4 hover:underline sm:text-4xl"
         >
           nassjourney@gmail.com
         </a>
-      </Section>
+      </Section> */}
     </main>
   );
 }
