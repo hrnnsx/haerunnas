@@ -1,10 +1,12 @@
-
 "use client";
 
 import { useEffect, useRef, useState } from "react";
 
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+
+import { executeCommand } from "./command/command";
+import type { FileSystemNode } from "./filesystem/types";
 
 import "@xterm/xterm/css/xterm.css";
 import "./terminal.css";
@@ -14,28 +16,46 @@ type TerminalStage = "welcome" | "closing" | "opening" | "system";
 interface TerminalProps {
   onBootStart: () => void;
   onBootComplete: () => void;
-  onCommand: (command: string) => void;
+
+  currentDirectory: string;
+  onDirectoryChange: (path: string) => void;
+
+  onOpenApplication?: (node: FileSystemNode) => void;
 }
+
+const HOME_DIRECTORY = "/home/haerunnas";
 
 export default function Terminal({
   onBootStart,
   onBootComplete,
-  onCommand,
+  currentDirectory,
+  onDirectoryChange,
+  onOpenApplication,
 }: TerminalProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
 
-  // Keep callbacks updated without recreating the terminal.
+  // Keep callbacks updated without recreating xterm.
   const bootStartCallback = useRef(onBootStart);
   const bootCallback = useRef(onBootComplete);
-  const commandCallback = useRef(onCommand);
+  const directoryChangeCallback = useRef(onDirectoryChange);
+  const openApplicationCallback = useRef(onOpenApplication);
+  const directoryRef = useRef(currentDirectory);
 
   const [stage, setStage] = useState<TerminalStage>("welcome");
 
   useEffect(() => {
     bootStartCallback.current = onBootStart;
     bootCallback.current = onBootComplete;
-    commandCallback.current = onCommand;
-  }, [onBootStart, onBootComplete, onCommand]);
+    directoryChangeCallback.current = onDirectoryChange;
+    openApplicationCallback.current = onOpenApplication;
+    directoryRef.current = currentDirectory;
+  }, [
+    onBootStart,
+    onBootComplete,
+    onDirectoryChange,
+    onOpenApplication,
+    currentDirectory,
+  ]);
 
   useEffect(() => {
     if (!terminalRef.current) return;
@@ -60,12 +80,10 @@ export default function Terminal({
     terminal.loadAddon(fitAddon);
     terminal.open(terminalRef.current);
 
-    // ANSI colors
     const COLORS = {
-      slate: "\x1b[38;2;100;116;139m",
       gray: "\x1b[90m",
       green: "\x1b[32m",
-      cyan: "\x1b[36m",
+      blue: "\x1b[34m",
       reset: "\x1b[0m",
     };
 
@@ -76,7 +94,6 @@ export default function Terminal({
 
     const timers: ReturnType<typeof setTimeout>[] = [];
 
-    // Safe timeout helper
     const delay = (callback: () => void, duration: number) => {
       const timer = setTimeout(() => {
         if (!disposed) callback();
@@ -85,28 +102,62 @@ export default function Terminal({
       timers.push(timer);
     };
 
-    // Shell prompt
-    const prompt = (newLine = true) => {
-      if (newLine) terminal.write("\r\n");
+    // Shell prompt.
+    const getPrompt = () => {
+      const directory = directoryRef.current;
 
-      terminal.write(
-        `${COLORS.slate}haerunnas@system${COLORS.reset}:${COLORS.cyan}~${COLORS.reset}$ `
-      );
+      const displayDirectory =
+        directory === HOME_DIRECTORY
+          ? "~"
+          : directory.startsWith(`${HOME_DIRECTORY}/`)
+            ? `~${directory.slice(HOME_DIRECTORY.length)}`
+            : directory;
+
+      return `\x1b[32mhaerunnas@haerunnas-os\x1b[0m:\x1b[34m${displayDirectory}\x1b[0m$ `;
     };
 
-    // Boot sequence
+    const prompt = (newLine = true) => {
+      if (newLine) terminal.write("\r\n");
+      terminal.write(getPrompt());
+    };
+
+    // Execute shell command.
+    const handleCommand = (command: string) => {
+      try {
+        executeCommand(command, {
+          terminal,
+          currentDirectory: directoryRef.current,
+
+          onDirectoryChange: (path) => {
+            directoryChangeCallback.current(path);
+          },
+
+          onOpenApplication: (node) => {
+            openApplicationCallback.current?.(node);
+          },
+        });
+      } catch (error) {
+        console.error("Terminal command error:", error);
+
+        terminal.writeln(
+          `${COLORS.gray}An error occurred while executing the command.${COLORS.reset}`
+        );
+      }
+    };
+
+    // Boot sequence.
     const bootSystem = () => {
       isBooting = true;
 
       terminal.writeln("");
       terminal.writeln(
-        `${COLORS.gray}Initializing Haerunnas OS...${COLORS.reset}`
+        `${COLORS.gray}Initializing OS...${COLORS.reset}`
       );
 
       const messages = [
         "Loading system configuration...",
         "Initializing environment...",
-        "Starting haerunnas-shell...",
+        "Starting System...",
         `${COLORS.green}System ready.${COLORS.reset}`,
       ];
 
@@ -114,16 +165,13 @@ export default function Terminal({
         delay(() => {
           terminal.writeln(message);
 
-          // Last boot message
           if (index === messages.length - 1) {
             terminal.writeln("");
             terminal.writeln("Boot sequence completed.");
 
-            // Start closing animation
             delay(() => {
               setStage("closing");
 
-              // Wait until terminal is closed
               delay(() => {
                 terminal.clear();
 
@@ -140,10 +188,8 @@ export default function Terminal({
 
                 prompt(false);
 
-                // Reveal main display
                 bootCallback.current();
 
-                // Start opening animation
                 setStage("opening");
 
                 delay(() => {
@@ -151,6 +197,10 @@ export default function Terminal({
                   isBooting = false;
 
                   setStage("system");
+
+                  requestAnimationFrame(() => {
+                    if (!disposed) fitAddon.fit();
+                  });
                 }, 750);
               }, 750);
             }, 800);
@@ -159,25 +209,28 @@ export default function Terminal({
       });
     };
 
-    // Initial terminal screen
+    // Initial screen.
     terminal.writeln(
       `${COLORS.gray}PRE-BOOT ENVIRONMENT${COLORS.reset}`
     );
 
+    terminal.writeln(
+      `${COLORS.gray}Type "enter" to start boot.${COLORS.reset}`
+    );
+
     prompt(false);
 
-    // Terminal input handler
+    // Keyboard input.
     const inputHandler = terminal.onData((data) => {
       if (isBooting) return;
 
-      // Enter
+      // Enter.
       if (data === "\r") {
         const command = input.trim();
 
         terminal.write("\r\n");
         input = "";
 
-        // Before system initialization
         if (!systemStarted) {
           if (command.toLowerCase() === "enter") {
             bootStartCallback.current();
@@ -189,16 +242,15 @@ export default function Terminal({
           return;
         }
 
-        // After system initialization
         if (command) {
-          commandCallback.current(command);
+          handleCommand(command);
         }
 
         prompt(false);
         return;
       }
 
-      // Backspace
+      // Backspace.
       if (data === "\u007f") {
         if (input.length > 0) {
           input = input.slice(0, -1);
@@ -208,17 +260,21 @@ export default function Terminal({
         return;
       }
 
-      // Printable characters
+      // Printable characters.
       if (data >= " " && data <= "~") {
         input += data;
         terminal.write(data);
       }
     });
 
-    // Resize handling
+    // Resize handling.
     const resizeObserver = new ResizeObserver(() => {
       requestAnimationFrame(() => {
-        if (!disposed && terminalRef.current?.clientHeight) {
+        if (
+          !disposed &&
+          terminalRef.current?.clientHeight &&
+          terminalRef.current.clientWidth
+        ) {
           fitAddon.fit();
         }
       });
@@ -227,10 +283,10 @@ export default function Terminal({
     resizeObserver.observe(terminalRef.current);
 
     requestAnimationFrame(() => {
-      fitAddon.fit();
+      if (!disposed) fitAddon.fit();
     });
 
-    // Cleanup
+    // Cleanup.
     return () => {
       disposed = true;
 
@@ -242,22 +298,45 @@ export default function Terminal({
     };
   }, []);
 
+  // Container styles based on terminal stage.
+  const stageClasses: Record<TerminalStage, string> = {
+    welcome: `
+      relative h-full w-full
+      opacity-100
+    `,
+    closing: `
+      relative h-full w-full
+      opacity-0
+    `,
+    opening: `
+      relative h-full w-full
+      opacity-0
+    `,
+    system: `
+      relative h-full w-full
+      opacity-100
+    `,
+  };
+
+  
   return (
     <div
       className={`
-        terminal-container z-20 overflow-hidden
+        terminal-container
+        z-20
+        pointer-events-auto
+        bg-black/75
+        backdrop-blur-xl
+        shadow-2xl
         transition-all duration-700 ease-in-out
-
-        ${
-          stage === "welcome"
-            ? "relative mx-auto w-[min(470px,calc(100vw-2rem))] h-40"
-            : stage === "closing"
-              ? "fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(470px,calc(100vw-2rem))] h-0 opacity-0"
-              : "fixed left-1/2 bottom-8 -translate-x-1/2 w-[min(900px,calc(100vw-2rem))] h-30 opacity-100"
-        }
+        ${stageClasses[stage]}
       `}
     >
-      <div ref={terminalRef} className="terminal-body h-full backdrop-blur-md" />
+      <div
+        ref={terminalRef}
+        className="terminal-body h-full w-full"
+      />
     </div>
   );
+
 }
