@@ -30,6 +30,18 @@ export interface LayoutResult {
   rect: WindowRect;
 }
 
+export interface DividerResult {
+  id: string;
+  direction: SplitDirection;
+  rect: WindowRect;
+  parentSize: number;
+}
+
+export interface LayoutCalculation {
+  windows: LayoutResult[];
+  dividers: DividerResult[];
+}
+
 export interface WorkspaceConfig {
   gap: number;
   outerGap: number;

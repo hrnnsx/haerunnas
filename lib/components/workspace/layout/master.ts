@@ -1,8 +1,14 @@
 
 import type {
+  LayoutCalculation,
   LayoutResult,
+  DividerResult,
   WindowRect,
 } from "./types";
+
+const GOLDEN_RATIO = 0.618;
+const MIN_RATIO = 0.1;
+const MAX_RATIO = 0.9;
 
 export type MasterPosition =
   | "left"
@@ -15,6 +21,11 @@ export interface MasterState {
   stackIds: string[];
   position: MasterPosition;
   ratio: number;
+  stackRatios: number[];
+}
+
+function clampRatio(ratio: number): number {
+  return Math.max(MIN_RATIO, Math.min(MAX_RATIO, ratio));
 }
 
 export function createMasterState(
@@ -24,7 +35,8 @@ export function createMasterState(
     masterId: windowIds[0] ?? null,
     stackIds: windowIds.slice(1),
     position: "left",
-    ratio: 0.55,
+    ratio: GOLDEN_RATIO,
+    stackRatios: [],
   };
 }
 
@@ -63,12 +75,24 @@ export function removeMasterWindow(
       ...state,
       masterId: nextMaster ?? null,
       stackIds: remaining,
+      stackRatios: state.stackRatios.slice(
+        0,
+        Math.max(0, remaining.length - 1)
+      ),
     };
   }
 
+  const nextStack = state.stackIds.filter(
+    (id) => id !== windowId
+  );
+
   return {
     ...state,
-    stackIds: state.stackIds.filter((id) => id !== windowId),
+    stackIds: nextStack,
+    stackRatios: state.stackRatios.slice(
+      0,
+      Math.max(0, nextStack.length - 1)
+    ),
   };
 }
 
@@ -96,6 +120,40 @@ export function promoteMasterWindow(
     ...state,
     masterId: windowId,
     stackIds: nextStack,
+    stackRatios: [],
+  };
+}
+
+export function resizeMasterRatio(
+  state: MasterState,
+  delta: number,
+  parentSize: number
+): MasterState {
+  return {
+    ...state,
+    ratio: clampRatio(
+      state.ratio + delta / Math.max(1, parentSize)
+    ),
+  };
+}
+
+export function resizeMasterStack(
+  state: MasterState,
+  index: number,
+  delta: number,
+  parentSize: number
+): MasterState {
+  const ratios = [...state.stackRatios];
+
+  const currentRatio = ratios[index] ?? GOLDEN_RATIO;
+
+  ratios[index] = clampRatio(
+    currentRatio + delta / Math.max(1, parentSize)
+  );
+
+  return {
+    ...state,
+    stackRatios: ratios,
   };
 }
 
@@ -103,109 +161,187 @@ export function calculateMasterLayout(
   state: MasterState,
   area: WindowRect,
   gap: number
-): LayoutResult[] {
-  const results: LayoutResult[] = [];
+): LayoutCalculation {
+  const windows: LayoutResult[] = [];
+  const dividers: DividerResult[] = [];
 
   const { masterId, stackIds, position, ratio } = state;
 
-  if (!masterId) return results;
+  if (!masterId) {
+    return { windows, dividers };
+  }
 
   if (stackIds.length === 0) {
-    return [
-      {
-        windowId: masterId,
-        rect: area,
-      },
-    ];
+    windows.push({
+      windowId: masterId,
+      rect: area,
+    });
+
+    return { windows, dividers };
   }
 
   const horizontal =
     position === "left" || position === "right";
 
-  const available = Math.max(
-    0,
-    (horizontal ? area.width : area.height) - gap
-  );
+  const parentSize = horizontal ? area.width : area.height;
+  const available = Math.max(0, parentSize - gap);
 
   const masterSize = available * ratio;
   const stackSize = available - masterSize;
 
-  let masterRect: WindowRect;
-  let stackRect: WindowRect;
+  const masterOnFirst =
+    position === "left" || position === "top";
 
-  if (horizontal) {
-    const masterOnLeft = position === "left";
+  const masterRect: WindowRect = horizontal
+    ? {
+        x: masterOnFirst
+          ? area.x
+          : area.x + stackSize + gap,
+        y: area.y,
+        width: masterSize,
+        height: area.height,
+      }
+    : {
+        x: area.x,
+        y: masterOnFirst
+          ? area.y
+          : area.y + stackSize + gap,
+        width: area.width,
+        height: masterSize,
+      };
 
-    masterRect = {
-      x: masterOnLeft
-        ? area.x
-        : area.x + stackSize + gap,
-      y: area.y,
-      width: masterSize,
-      height: area.height,
-    };
+  const stackRect: WindowRect = horizontal
+    ? {
+        x: masterOnFirst
+          ? area.x + masterSize + gap
+          : area.x,
+        y: area.y,
+        width: stackSize,
+        height: area.height,
+      }
+    : {
+        x: area.x,
+        y: masterOnFirst
+          ? area.y + masterSize + gap
+          : area.y,
+        width: area.width,
+        height: stackSize,
+      };
 
-    stackRect = {
-      x: masterOnLeft
-        ? area.x + masterSize + gap
-        : area.x,
-      y: area.y,
-      width: stackSize,
-      height: area.height,
-    };
-  } else {
-    const masterOnTop = position === "top";
-
-    masterRect = {
-      x: area.x,
-      y: masterOnTop
-        ? area.y
-        : area.y + stackSize + gap,
-      width: area.width,
-      height: masterSize,
-    };
-
-    stackRect = {
-      x: area.x,
-      y: masterOnTop
-        ? area.y + masterSize + gap
-        : area.y,
-      width: area.width,
-      height: stackSize,
-    };
-  }
-
-  results.push({
+  windows.push({
     windowId: masterId,
     rect: masterRect,
   });
 
-  const stackGap = gap * (stackIds.length - 1);
-
-  const stackItemSize =
-    Math.max(
-      0,
-      (horizontal ? stackRect.height : stackRect.width) -
-        stackGap
-    ) / stackIds.length;
-
-  stackIds.forEach((windowId, index) => {
-    const rect: WindowRect = horizontal
+  dividers.push({
+    id: "master",
+    direction: horizontal ? "horizontal" : "vertical",
+    rect: horizontal
       ? {
-          x: stackRect.x,
-          y: stackRect.y + index * (stackItemSize + gap),
-          width: stackRect.width,
-          height: stackItemSize,
+          x: area.x + (masterOnFirst ? masterSize : stackSize),
+          y: area.y,
+          width: gap,
+          height: area.height,
         }
       : {
-          x: stackRect.x + index * (stackItemSize + gap),
-          y: stackRect.y,
-          width: stackItemSize,
-          height: stackRect.height,
-        };
-
-    results.push({ windowId, rect });
+          x: area.x,
+          y: area.y + (masterOnFirst ? masterSize : stackSize),
+          width: area.width,
+          height: gap,
+        },
+    parentSize,
   });
 
-  return results;
+  // Stack dipecah bertingkat menggunakan golden ratio.
+  function calculateStack(
+    ids: string[],
+    rect: WindowRect,
+    index: number
+  ) {
+    if (ids.length === 0) return;
+
+    if (ids.length === 1) {
+      windows.push({
+        windowId: ids[0],
+        rect,
+      });
+
+      return;
+    }
+
+    const stackHorizontal = horizontal;
+    const size = stackHorizontal ? rect.height : rect.width;
+    const availableStack = Math.max(0, size - gap);
+
+    const splitRatio =
+      state.stackRatios[index] ?? GOLDEN_RATIO;
+
+    const firstSize = availableStack * splitRatio;
+    const secondSize = availableStack - firstSize;
+
+    dividers.push({
+      id: `stack:${index}`,
+      direction: stackHorizontal ? "vertical" : "horizontal",
+      rect: stackHorizontal
+        ? {
+            x: rect.x,
+            y: rect.y + firstSize,
+            width: rect.width,
+            height: gap,
+          }
+        : {
+            x: rect.x + firstSize,
+            y: rect.y,
+            width: gap,
+            height: rect.height,
+          },
+      parentSize: size,
+    });
+
+    const firstRect: WindowRect = stackHorizontal
+      ? {
+          x: rect.x,
+          y: rect.y,
+          width: rect.width,
+          height: firstSize,
+        }
+      : {
+          x: rect.x,
+          y: rect.y,
+          width: firstSize,
+          height: rect.height,
+        };
+
+    const secondRect: WindowRect = stackHorizontal
+      ? {
+          x: rect.x,
+          y: rect.y + firstSize + gap,
+          width: rect.width,
+          height: secondSize,
+        }
+      : {
+          x: rect.x + firstSize + gap,
+          y: rect.y,
+          width: secondSize,
+          height: rect.height,
+        };
+
+    windows.push({
+      windowId: ids[0],
+      rect: firstRect,
+    });
+
+    calculateStack(
+      ids.slice(1),
+      secondRect,
+      index + 1
+    );
+  }
+
+  calculateStack(stackIds, stackRect, 0);
+
+  return {
+    windows,
+    dividers,
+  };
 }

@@ -1,8 +1,7 @@
 
 "use client";
 
-import { useRef } from "react";
-import type { ReactNode, PointerEvent } from "react";
+import type { ReactNode } from "react";
 
 import type { WindowRect } from "./layout/types";
 
@@ -14,7 +13,6 @@ interface WindowFrameProps {
   onFocus: () => void;
   onClose: () => void;
   onDropWindow: (sourceId: string) => void;
-  onResize: (deltaX: number, deltaY: number) => void;
   children: ReactNode;
   terminal?: boolean;
   hideHeader?: boolean;
@@ -28,50 +26,10 @@ export default function WindowFrame({
   onFocus,
   onClose,
   onDropWindow,
-  onResize,
   children,
   terminal = false,
   hideHeader = false,
 }: WindowFrameProps) {
-  const pointerRef = useRef({
-    active: false,
-    x: 0,
-    y: 0,
-  });
-
-  const handlePointerDown = (
-    event: PointerEvent<HTMLDivElement>
-  ) => {
-    event.preventDefault();
-    event.stopPropagation();
-
-    pointerRef.current = {
-      active: true,
-      x: event.clientX,
-      y: event.clientY,
-    };
-
-    event.currentTarget.setPointerCapture(event.pointerId);
-  };
-
-  const handlePointerMove = (
-    event: PointerEvent<HTMLDivElement>
-  ) => {
-    if (!pointerRef.current.active) return;
-
-    const deltaX = event.clientX - pointerRef.current.x;
-    const deltaY = event.clientY - pointerRef.current.y;
-
-    pointerRef.current.x = event.clientX;
-    pointerRef.current.y = event.clientY;
-
-    onResize(deltaX, deltaY);
-  };
-
-  const handlePointerEnd = () => {
-    pointerRef.current.active = false;
-  };
-
   return (
     <section
       data-window-id={windowId}
@@ -80,18 +38,20 @@ export default function WindowFrame({
       onDrop={(event) => {
         event.preventDefault();
 
-        const sourceId = event.dataTransfer.getData("text/plain");
+        const sourceId =
+          event.dataTransfer.getData("text/plain");
 
         if (sourceId && sourceId !== windowId) {
           onDropWindow(sourceId);
         }
       }}
       className={`
-        absolute overflow-hidden
+        absolute flex flex-col overflow-hidden
         ${hideHeader ? "" : "rounded-xl border bg-[#0b0b0f]/95"}
-        ${focused && !hideHeader
-          ? "border-white/35 shadow-lg shadow-black/30"
-          : "border-white/10"
+        ${
+          focused && !hideHeader
+            ? "border-white/35 shadow-lg shadow-black/30"
+            : "border-white/10"
         }
       `}
       style={{
@@ -105,7 +65,11 @@ export default function WindowFrame({
         <header
           draggable
           onDragStart={(event) => {
-            event.dataTransfer.setData("text/plain", windowId);
+            event.dataTransfer.setData(
+              "text/plain",
+              windowId
+            );
+
             event.dataTransfer.effectAllowed = "move";
             onFocus();
           }}
@@ -141,30 +105,9 @@ export default function WindowFrame({
         </header>
       )}
 
-      <div
-        className="min-h-0 min-w-0 overflow-hidden"
-        style={{
-          height: hideHeader ? "100%" : "calc(100% - 44px)",
-        }}
-      >
+      <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
         {children}
       </div>
-
-      {!hideHeader && !terminal && (
-        <div
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerEnd}
-          onPointerCancel={handlePointerEnd}
-          className="
-            absolute bottom-0 right-0 z-20
-            h-5 w-5 cursor-nwse-resize
-            touch-none
-          "
-        >
-          <div className="absolute bottom-1 right-1 h-2 w-2 rounded-sm border-b-2 border-r-2 border-white/30" />
-        </div>
-      )}
     </section>
   );
 }

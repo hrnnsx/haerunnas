@@ -2,11 +2,13 @@
 import type {
   LayoutNode,
   LayoutResult,
+  DividerResult,
+  LayoutCalculation,
   SplitDirection,
   WindowRect,
 } from "./types";
 
-const DEFAULT_RATIO = 0.5;
+const GOLDEN_RATIO = 0.618;
 const MIN_RATIO = 0.1;
 const MAX_RATIO = 0.9;
 
@@ -17,9 +19,7 @@ export function createLeaf(windowId: string): LayoutNode {
   };
 }
 
-export function getWindowIds(
-  node: LayoutNode | null
-): string[] {
+export function getWindowIds(node: LayoutNode | null): string[] {
   if (!node) return [];
 
   if (node.type === "window") {
@@ -32,77 +32,167 @@ export function getWindowIds(
   ];
 }
 
-function clampRatio(ratio: number) {
+function clampRatio(ratio: number): number {
   return Math.max(MIN_RATIO, Math.min(MAX_RATIO, ratio));
 }
 
-function getAutomaticDirection(
-  rect: WindowRect
-): SplitDirection {
-  return rect.width >= rect.height
-    ? "horizontal"
-    : "vertical";
+function createSplit(
+  direction: SplitDirection,
+  first: LayoutNode,
+  second: LayoutNode,
+  ratio = GOLDEN_RATIO
+): LayoutNode {
+  return {
+    type: "split",
+    direction,
+    ratio: clampRatio(ratio),
+    first,
+    second,
+  };
 }
 
-function findLeaf(
-  node: LayoutNode,
-  windowId: string
-): boolean {
-  if (node.type === "window") {
-    return node.windowId === windowId;
+/**
+ * Struktur kolom:
+ *
+ * Horizontal split:
+ * [Column 1] | [Column 2] | [Column 3]
+ *
+ * Setiap column berisi vertical split:
+ * [Row 1]
+ * [Row 2]
+ * [Row 3]
+ */
+
+function extractColumns(root: LayoutNode): LayoutNode[] {
+  if (
+    root.type === "split" &&
+    root.direction === "horizontal"
+  ) {
+    return [
+      ...extractColumns(root.first),
+      ...extractColumns(root.second),
+    ];
   }
 
-  return (
-    findLeaf(node.first, windowId) ||
-    findLeaf(node.second, windowId)
+  return [root];
+}
+
+function appendColumn(
+  root: LayoutNode,
+  column: LayoutNode
+): LayoutNode {
+  // Kolom baru membagi seluruh area yang sudah ada.
+  return createSplit("horizontal", root, column);
+}
+
+function replaceColumn(
+  root: LayoutNode,
+  targetIndex: number,
+  replacement: LayoutNode
+): LayoutNode {
+  if (
+    root.type !== "split" ||
+    root.direction !== "horizontal"
+  ) {
+    return replacement;
+  }
+
+  const firstColumnCount = extractColumns(root.first).length;
+
+  if (targetIndex < firstColumnCount) {
+    return {
+      ...root,
+      first: replaceColumn(
+        root.first,
+        targetIndex,
+        replacement
+      ),
+    };
+  }
+
+  return {
+    ...root,
+    second: replaceColumn(
+      root.second,
+      targetIndex - firstColumnCount,
+      replacement
+    ),
+  };
+}
+
+function appendRow(
+  column: LayoutNode,
+  windowId: string
+): LayoutNode {
+  return createSplit(
+    "vertical",
+    column,
+    createLeaf(windowId)
   );
 }
 
+
+/**
+ * Pola penambahan:
+ *
+ * 1  = satu area penuh
+ * 2  = dua kolom
+ * 3  = tambah baris kolom 1
+ * 4  = tambah baris kolom 2
+ * 5  = tambah kolom 3
+ * 6  = tambah baris kolom 1
+ * 7  = tambah baris kolom 2
+ * 8  = tambah baris kolom 3
+ * 9  = tambah kolom 4
+ *
+ * Siklus akan terus berulang.
+ */
 export function insertWindow(
   root: LayoutNode | null,
-  windowId: string,
-  targetId?: string,
-  direction?: SplitDirection
+  windowId: string
 ): LayoutNode {
   if (!root) return createLeaf(windowId);
 
-  if (getWindowIds(root).includes(windowId)) {
+  const existingIds = getWindowIds(root);
+
+  if (existingIds.includes(windowId)) {
     return root;
   }
 
-  const target = targetId ?? getWindowIds(root).at(-1);
-
-  if (!target || !findLeaf(root, target)) {
-    return {
-      type: "split",
-      direction: "horizontal",
-      ratio: DEFAULT_RATIO,
-      first: root,
-      second: createLeaf(windowId),
-    };
+  // Window kedua selalu membentuk kolom kedua.
+  if (existingIds.length === 1) {
+    return createSplit(
+      "horizontal",
+      root,
+      createLeaf(windowId)
+    );
   }
 
-  function replace(node: LayoutNode): LayoutNode {
-    if (node.type === "window") {
-      if (node.windowId !== target) return node;
+  const columns = extractColumns(root);
+  const columnCount = columns.length;
+  const windowCount = existingIds.length;
 
-      return {
-        type: "split",
-        direction: direction ?? "horizontal",
-        ratio: DEFAULT_RATIO,
-        first: node,
-        second: createLeaf(windowId),
-      };
-    }
+  const cyclePosition = (windowCount - 2) % (columnCount + 1);
 
-    return {
-      ...node,
-      first: replace(node.first),
-      second: replace(node.second),
-    };
+  // Semua kolom sudah mendapat satu tambahan baris.
+  // Saatnya membuat kolom baru.
+  if (cyclePosition === columnCount) {
+    return appendColumn(root, createLeaf(windowId));
   }
 
-  return replace(root);
+  // Tambahkan baris pada kolom sesuai urutan siklus.
+  const targetColumn = cyclePosition;
+
+  const updatedColumn = appendRow(
+    columns[targetColumn],
+    windowId
+  );
+
+  return replaceColumn(
+    root,
+    targetColumn,
+    updatedColumn
+  );
 }
 
 export function removeWindow(
@@ -158,70 +248,78 @@ export function swapWindows(
   return visit(node);
 }
 
-
+/**
+ * Resize split berdasarkan path.
+ * 0 = first, 1 = second.
+ *
+ * Parent size digunakan untuk mengubah delta pixel
+ * menjadi perubahan rasio.
+ */
 export function resizeSplit(
   node: LayoutNode,
-  targetId: string,
-  delta: number
+  path: string,
+  delta: number,
+  parentSize: number
 ): LayoutNode {
   if (node.type === "window") return node;
 
-  const contains = (current: LayoutNode): boolean => {
-    if (current.type === "window") {
-      return current.windowId === targetId;
-    }
-
-    return (
-      contains(current.first) ||
-      contains(current.second)
-    );
-  };
-
-  const firstHas = contains(node.first);
-  const secondHas = contains(node.second);
-
-  if (!firstHas && !secondHas) return node;
-
-  // Continue deeper if the target belongs to a nested split.
-  if (firstHas && node.first.type === "split") {
+  if (path.length === 0) {
     return {
       ...node,
-      first: resizeSplit(node.first, targetId, delta),
+      ratio: clampRatio(
+        node.ratio + delta / Math.max(1, parentSize)
+      ),
     };
   }
 
-  if (secondHas && node.second.type === "split") {
+  const [direction, ...remaining] = path;
+  const nextPath = remaining.join("");
+
+  if (direction === "0") {
     return {
       ...node,
-      second: resizeSplit(node.second, targetId, delta),
+      first: resizeSplit(
+        node.first,
+        nextPath,
+        delta,
+        parentSize
+      ),
     };
   }
 
-  // This is the nearest split controlling the target leaf.
   return {
     ...node,
-    ratio: clampRatio(
-      node.ratio + (firstHas ? delta : -delta)
+    second: resizeSplit(
+      node.second,
+      nextPath,
+      delta,
+      parentSize
     ),
   };
 }
 
-
+/**
+ * Menghasilkan ukuran window sekaligus divider.
+ */
 export function calculateDwindleLayout(
   root: LayoutNode | null,
   rect: WindowRect,
   gap: number
-): LayoutResult[] {
-  if (!root) return [];
+): LayoutCalculation {
+  const windows: LayoutResult[] = [];
+  const dividers: DividerResult[] = [];
 
-  const results: LayoutResult[] = [];
+  if (!root) {
+    return { windows, dividers };
+  }
 
   function calculate(
     node: LayoutNode,
-    area: WindowRect
+    area: WindowRect,
+    path: string
   ) {
     if (node.type === "window") {
-      results.push({
+      windows.push({
         windowId: node.windowId,
         rect: area,
       });
@@ -230,53 +328,84 @@ export function calculateDwindleLayout(
     }
 
     const horizontal = node.direction === "horizontal";
-    const available = Math.max(
-      0,
-      (horizontal ? area.width : area.height) - gap
-    );
+    const parentSize = horizontal ? area.width : area.height;
 
+    const available = Math.max(0, parentSize - gap);
     const firstSize = available * node.ratio;
     const secondSize = available - firstSize;
 
+    const dividerRect: WindowRect = horizontal
+      ? {
+          x: area.x + firstSize,
+          y: area.y,
+          width: gap,
+          height: area.height,
+        }
+      : {
+          x: area.x,
+          y: area.y + firstSize,
+          width: area.width,
+          height: gap,
+        };
+
+    dividers.push({
+      id: path,
+      direction: node.direction,
+      rect: dividerRect,
+      parentSize,
+    });
+
     if (horizontal) {
-      calculate(node.first, {
-        x: area.x,
-        y: area.y,
-        width: firstSize,
-        height: area.height,
-      });
+      calculate(
+        node.first,
+        {
+          x: area.x,
+          y: area.y,
+          width: firstSize,
+          height: area.height,
+        },
+        `${path}0`
+      );
 
-      calculate(node.second, {
-        x: area.x + firstSize + gap,
-        y: area.y,
-        width: secondSize,
-        height: area.height,
-      });
+      calculate(
+        node.second,
+        {
+          x: area.x + firstSize + gap,
+          y: area.y,
+          width: secondSize,
+          height: area.height,
+        },
+        `${path}1`
+      );
     } else {
-      calculate(node.first, {
-        x: area.x,
-        y: area.y,
-        width: area.width,
-        height: firstSize,
-      });
+      calculate(
+        node.first,
+        {
+          x: area.x,
+          y: area.y,
+          width: area.width,
+          height: firstSize,
+        },
+        `${path}0`
+      );
 
-      calculate(node.second, {
-        x: area.x,
-        y: area.y + firstSize + gap,
-        width: area.width,
-        height: secondSize,
-      });
+      calculate(
+        node.second,
+        {
+          x: area.x,
+          y: area.y + firstSize + gap,
+          width: area.width,
+          height: secondSize,
+        },
+        `${path}1`
+      );
     }
   }
 
-  calculate(root, rect);
+  calculate(root, rect, "");
 
-  return results;
-}
-
-export function getSplitDirection(
-  width: number,
-  height: number
-): SplitDirection {
-  return getAutomaticDirection({ x: 0, y: 0, width, height });
+  return {
+    windows,
+    dividers,
+  };
 }

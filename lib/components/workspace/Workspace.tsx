@@ -9,7 +9,7 @@ import {
   useState,
 } from "react";
 
-import type { ReactNode } from "react";
+import type { ReactNode, PointerEvent } from "react";
 import type { WindowInstance } from "../applications/manager/types";
 
 import WindowFrame from "@/lib/components/workspace/WindowFrame";
@@ -18,6 +18,7 @@ import type {
   LayoutNode,
   LayoutMode,
   WindowRect,
+  DividerResult,
 } from "./layout/types";
 
 import {
@@ -36,6 +37,8 @@ import {
   removeMasterWindow,
   promoteMasterWindow,
   calculateMasterLayout,
+  resizeMasterRatio,
+  resizeMasterStack,
 } from "./layout/master";
 
 import "./workspace.css";
@@ -45,6 +48,91 @@ interface WorkspaceProps {
   booted: boolean;
   renderWindow: (window: WindowInstance) => ReactNode;
   onCloseWindow: (windowId: string) => void;
+}
+
+interface ResizeDividerProps {
+  divider: DividerResult;
+  onResize: (deltaX: number, deltaY: number) => void;
+}
+
+function ResizeDivider({
+  divider,
+  onResize,
+}: ResizeDividerProps) {
+  const pointerRef = useRef({
+    active: false,
+    x: 0,
+    y: 0,
+  });
+
+  const handlePointerDown = (
+    event: PointerEvent<HTMLDivElement>
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    pointerRef.current = {
+      active: true,
+      x: event.clientX,
+      y: event.clientY,
+    };
+
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handlePointerMove = (
+    event: PointerEvent<HTMLDivElement>
+  ) => {
+    if (!pointerRef.current.active) return;
+
+    const deltaX = event.clientX - pointerRef.current.x;
+    const deltaY = event.clientY - pointerRef.current.y;
+
+    pointerRef.current.x = event.clientX;
+    pointerRef.current.y = event.clientY;
+
+    onResize(deltaX, deltaY);
+  };
+
+  const handlePointerEnd = () => {
+    pointerRef.current.active = false;
+  };
+
+  const horizontal = divider.direction === "horizontal";
+
+  return (
+    <div
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerEnd}
+      onPointerCancel={handlePointerEnd}
+      className={`
+        absolute z-50 touch-none
+        ${horizontal
+          ? "cursor-col-resize"
+          : "cursor-row-resize"
+        }
+      `}
+      style={{
+        left: divider.rect.x,
+        top: divider.rect.y,
+        width: divider.rect.width,
+        height: divider.rect.height,
+      }}
+    >
+      <div
+        className={`
+          absolute rounded-full bg-white/0
+          transition-colors duration-150
+          hover:bg-white/25
+          ${horizontal
+            ? "inset-y-0 left-1/2 w-1 -translate-x-1/2"
+            : "inset-x-0 top-1/2 h-1 -translate-y-1/2"
+          }
+        `}
+      />
+    </div>
+  );
 }
 
 const DEFAULT_GAP = 12;
@@ -87,7 +175,7 @@ export default function Workspace({
     [visibleWindows]
   );
 
-  // Measure workspace dimensions.
+  // Measure workspace.
   useEffect(() => {
     const element = workspaceRef.current;
     if (!element) return;
@@ -104,18 +192,17 @@ export default function Workspace({
     return () => observer.disconnect();
   }, []);
 
-  // Keep layout synchronized with window state.
+  // Synchronize Dwindle and Master layouts.
   useEffect(() => {
     setTree((current) => {
       let next = current;
 
       const existing = getWindowIds(next);
-      const removed = existing.filter(
-        (id) => !visibleIds.includes(id)
-      );
 
-      for (const id of removed) {
-        next = removeWindow(next, id);
+      for (const id of existing) {
+        if (!visibleIds.includes(id)) {
+          next = removeWindow(next, id);
+        }
       }
 
       for (const id of visibleIds) {
@@ -156,7 +243,7 @@ export default function Workspace({
     height: Math.max(0, size.height - OUTER_GAP * 2),
   };
 
-  const layoutResults = useMemo(() => {
+  const layout = useMemo(() => {
     if (mode === "dwindle") {
       return calculateDwindleLayout(
         tree,
@@ -170,19 +257,26 @@ export default function Workspace({
       area,
       DEFAULT_GAP
     );
-  }, [mode, tree, masterState, size.width, size.height]);
+  }, [
+    mode,
+    tree,
+    masterState,
+    size.width,
+    size.height,
+  ]);
 
   const layoutById = useMemo(
     () =>
       new Map(
-        layoutResults.map((result) => [
+        layout.windows.map((result) => [
           result.windowId,
           result.rect,
         ])
       ),
-    [layoutResults]
+    [layout.windows]
   );
 
+  // Swap windows. Existing behavior is preserved.
   const swapWindow = useCallback(
     (sourceId: string, targetId: string) => {
       if (mode === "dwindle") {
@@ -191,79 +285,106 @@ export default function Workspace({
             ? swapWindows(current, sourceId, targetId)
             : current
         );
-      } else {
-        setMasterState((current) => {
-          if (sourceId === current.masterId) {
-            return promoteMasterWindow(current, targetId);
-          }
 
-          if (targetId === current.masterId) {
-            return promoteMasterWindow(current, sourceId);
-          }
-
-          const ids = [...current.stackIds];
-          const first = ids.indexOf(sourceId);
-          const second = ids.indexOf(targetId);
-
-          if (first === -1 || second === -1) return current;
-
-          [ids[first], ids[second]] = [
-            ids[second],
-            ids[first],
-          ];
-
-          return {
-            ...current,
-            stackIds: ids,
-          };
-        });
+        return;
       }
+
+      setMasterState((current) => {
+        if (sourceId === current.masterId) {
+          return promoteMasterWindow(current, targetId);
+        }
+
+        if (targetId === current.masterId) {
+          return promoteMasterWindow(current, sourceId);
+        }
+
+        const ids = [...current.stackIds];
+        const first = ids.indexOf(sourceId);
+        const second = ids.indexOf(targetId);
+
+        if (first === -1 || second === -1) return current;
+
+        [ids[first], ids[second]] = [
+          ids[second],
+          ids[first],
+        ];
+
+        return {
+          ...current,
+          stackIds: ids,
+        };
+      });
     },
     [mode]
   );
 
-  const resizeWindow = useCallback(
-    (windowId: string, deltaX: number, deltaY: number) => {
+  // Resize the exact divider being dragged.
+  const resizeDivider = useCallback(
+    (
+      divider: DividerResult,
+      deltaX: number,
+      deltaY: number
+    ) => {
+      const delta =
+        divider.direction === "horizontal"
+          ? deltaX
+          : deltaY;
+
+      if (Math.abs(delta) < 0.01) return;
+
       if (mode === "dwindle") {
         setTree((current) => {
           if (!current) return current;
 
-          const rect = layoutById.get(windowId);
-          if (!rect) return current;
-
-          const delta =
-            rect.width >= rect.height
-              ? deltaX / Math.max(1, size.width)
-              : deltaY / Math.max(1, size.height);
-
-          return resizeSplit(current, windowId, delta);
+          return resizeSplit(
+            current,
+            divider.id,
+            delta,
+            divider.parentSize
+          );
         });
-      } else {
-        setMasterState((current) => ({
-          ...current,
-          ratio: Math.max(
-            0.2,
-            Math.min(
-              0.8,
-              current.ratio +
-                (current.position === "left" ||
-                current.position === "right"
-                  ? deltaX / Math.max(1, size.width)
-                  : deltaY / Math.max(1, size.height))
-            )
-          ),
-        }));
+
+        return;
+      }
+
+      if (divider.id === "master") {
+        const masterOnFirst =
+          masterState.position === "left" ||
+          masterState.position === "top";
+
+        setMasterState((current) =>
+          resizeMasterRatio(
+            current,
+            masterOnFirst ? delta : -delta,
+            divider.parentSize
+          )
+        );
+
+        return;
+      }
+
+      if (divider.id.startsWith("stack:")) {
+        const index = Number(
+          divider.id.replace("stack:", "")
+        );
+
+        setMasterState((current) =>
+          resizeMasterStack(
+            current,
+            index,
+            delta,
+            divider.parentSize
+          )
+        );
       }
     },
-    [mode, layoutById, size]
+    [mode, masterState.position]
   );
 
-  // Before boot, render the same terminal instance full-screen.
   const terminal = windows.find(
     (window) => window.type === "terminal"
   );
 
-  
   return (
     <div
       ref={workspaceRef}
@@ -344,14 +465,22 @@ export default function Workspace({
             onDropWindow={(sourceId) =>
               swapWindow(sourceId, window.id)
             }
-            onResize={(deltaX, deltaY) =>
-              resizeWindow(window.id, deltaX, deltaY)
-            }
           >
             {renderWindow(window)}
           </WindowFrame>
         );
       })}
+
+      {booted &&
+        layout.dividers.map((divider) => (
+          <ResizeDivider
+            key={divider.id}
+            divider={divider}
+            onResize={(deltaX, deltaY) =>
+              resizeDivider(divider, deltaX, deltaY)
+            }
+          />
+        ))}
     </div>
   );
 }
