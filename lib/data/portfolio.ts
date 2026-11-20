@@ -55,13 +55,13 @@ export const profile = {
   summary:
     "I'm a Computer Science student interested in software engineering, cybersecurity, and AI integration. I enjoy designing and building software systems, exploring security concepts, and experimenting with AI/LLM technologies to solve practical problems. I value clean architecture, maintainable code, and continuous technical exploration.",
 
-  email: "your-email@example.com",
+  email: "nassjourney@gmail.com",
 
   resumeHref: undefined as string | undefined,
 
   links: [
     { label: "github", href: "https://github.com/hrnnsx" },
-    { label: "linkedin", href: "https://linkedin.com/in/your-username" },
+    { label: "linkedin", href: "https://linkedin.com/in/haerunnas" },
   ] satisfies Link[],
 
   facts: [
@@ -139,7 +139,7 @@ export const projects: Project[] = [
       "Supabase",
     ],
     year: "2026",
-    repo: "https://github.com/haerunnas/nlidb",
+    repo: "https://github.com/haerunnas/pabi-nlidb",
     featured: true,
   },
   {
@@ -157,7 +157,7 @@ export const projects: Project[] = [
       "trace.moe",
     ],
     year: "2026",
-    demo: "https://libra-production-e912.up.railway.app",
+    repo: "https://github.com/hrnnsx/libra",
     featured: true,
   },
 ];
@@ -177,6 +177,21 @@ export const experience: Job[] = [
       "Team Leadership",
     ],
   },
+  {
+    role: "Human Resources Development Specialist",
+    company: "HIMTI UIN Syarif Hidayatullah Jakarta",
+    period: "Jun 2025 - Mar 2026",
+    points: [
+      "Contributed to human resource development and internal organizational initiatives.",
+      "Supported member development and organizational activities.",
+    ],
+    stack: [
+      "Human Resource Development",
+      "Academic Development",
+      "Organizational Development",
+      "Team Collaboration",
+    ]
+  }
 ];
 
 export const skills: SkillGroup[] = [
@@ -233,9 +248,28 @@ export const education: Degree[] = [
   {
     degree: "Computer Science",
     school: "UIN Syarif Hidayatullah Jakarta",
-    period: "In Progress",
+    period: "In Progress (Expected 2028)",
     note: "Undergraduate studies in Computer Science.",
   },
 ];
 
-export const certifications: Certificate[] = [];
+export const certifications: Certificate[] = [
+  {
+    name: "Back End Golang Night Bootcamp",
+    issuer: "Hacktiv8",
+    year: "2026",
+    href: "https://students.hacktiv8.com/certificates/9a61a568-0685-46f0-9e4d-6d3715524923",
+  },
+  {
+    name: "APTIKOMFEST 2026 - #2 Province",
+    issuer: "APTIKOM",
+    year: "2026",
+    href: "https://drive.google.com/file/d/1j6-Ut2K42pIZ5NZLkWP9pBYgK_CfryfK/view?usp=sharing",
+  },
+  // {
+  //   name: "",
+  //   issuer: "",
+  //   year: "",
+  //   href: "",
+  // },
+];
