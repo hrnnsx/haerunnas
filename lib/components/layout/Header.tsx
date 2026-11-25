@@ -27,11 +27,11 @@ export default function Header() {
 
   return (
     <header className="fixed inset-x-0 top-0 z-20 bg-linear-to-b from-[#0a0a0a] via-[#0a0a0a]/80 to-transparent">
-      <div className="mx-auto flex max-w-4xl items-center justify-between gap-6 px-6 py-5">
+      <div className="mx-auto flex max-w-5xl items-center justify-between gap-6 px-6 py-5">
         <a href="#top" className="hidden text-neutral-100 sm:block">
           {profile.name}
         </a>
-        <nav aria-label="Sections" className="flex flex-wrap gap-x-5 gap-y-1">
+        <nav aria-label="Sections" className="flex flex-wrap gap-x-10 gap-y-1">
           {navigation.map((item) => {
             const isActive = active === item.href.slice(1);
             return (

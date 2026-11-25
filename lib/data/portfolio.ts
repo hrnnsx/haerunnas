@@ -57,7 +57,7 @@ export const profile = {
 
   email: "nassjourney@gmail.com",
 
-  resumeHref: undefined as string | undefined,
+  resumeHref: "https://drive.google.com/file/d/1r8UAlELhLgzFvYN9AC5xOY6Bj8IpJOlL/view?usp=sharing",
 
   links: [
     { label: "github", href: "https://github.com/hrnnsx" },
@@ -250,6 +250,12 @@ export const education: Degree[] = [
     school: "UIN Syarif Hidayatullah Jakarta",
     period: "In Progress (Expected 2028)",
     note: "Undergraduate studies in Computer Science.",
+  },
+  {
+    degree: "Backend Golang Night Bootcamp",
+    school: "Hacktiv8",
+    period: "Graduated",
+    note: "Graduated at Nov 2026 with honors predicate.",
   },
 ];
 

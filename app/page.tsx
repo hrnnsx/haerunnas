@@ -12,12 +12,12 @@ export default function Home() {
   return (
     <>
       <div aria-hidden className="pointer-events-none fixed inset-0 z-0">
-        <Butterflies theme="dark" white={1} butterflyOpacity={0.7} density={0.4} />
+        <Butterflies theme="dark" white={1} butterflyOpacity={0.7} density={0.23} />
       </div>
 
-      <div className="relative z-10">
+      <div className="relative z-10 select-none">
         <Header />
-        <main className="mx-auto max-w-4xl px-6">
+        <main className="mx-auto max-w-5xl px-6">
           <Hero />
           <Projects />
           <Experience />
